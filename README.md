@@ -9,7 +9,7 @@ Discord_token - https://discord.com/developers/docs/intro / https://discord.com/
 battlemetrics_token - https://www.battlemetrics.com/developers <br />
 Steam_token - https://steamcommunity.com/dev
 Additional information the bot requires.
---------------------------
+
 Application ID - This is the ID of the bot itself. https://discord.com/developers/applications <br />
 
 Commands (Inputs: steamid, steamurl or battlemetrics rcon url)
