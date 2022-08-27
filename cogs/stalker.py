@@ -9,10 +9,11 @@ class Stalker(commands.Cog):
     def __init__(self, client):
         print("[Cog] Stalker has been initiated")
         self.client = client
-        with open("config.json", "r") as f:
+        with open("./json/config.json", "r") as f:
             config = json.load(f)
         self.config = config
-        self.stalks = []
+        self.stalks = {}
+        self.stalker.start()
     
     @app_commands.command(name="register", description="Register a server or servers discord")
     @app_commands.describe(server='Server ID')
@@ -20,11 +21,12 @@ class Stalker(commands.Cog):
     @app_commands.describe(discord='Servers discord link')
     async def register(self, interaction: discord.Interaction, server:str, servername: str, discord:str):
         myservers = ''
-        with open('servers.json', 'r') as f:
+        with open('./json/servers.json', 'r') as f:
             myservers = json.load(f)
         myservers[server]['discord'] = discord
         myservers[server]['name'] = servername
-        with open('servers.json', 'w') as f:
+        
+        with open('./json/servers.json', 'w') as f:
             f.write(json.dumps(myservers, indent=4))
         await interaction.response.send_message("You've successfully updated or added a servers information!")
     
@@ -33,6 +35,9 @@ class Stalker(commands.Cog):
         userids = await self.get_ids(submittedinfo)
         if not userids['bmid']:
             await ctx.reply("Could not find this user.")
+            return
+        if userids['bmid'] in self.stalks:
+            await ctx.reply("I am already hunting that user!")
             return
         stalker_channel = ctx.guild.get_channel(self.config['stalker_channel'])
         playerinfo = await self.playerinfo(userids['bmid'])
@@ -55,12 +60,13 @@ class Stalker(commands.Cog):
         create_thread = await stalker_channel.send(f"Let the hunt begin! I am now stalking {playerinfo['playername']}")
         thread = await stalker_channel.create_thread(name=f"{playerinfo['playername']}", message=create_thread, auto_archive_duration=10080)
         await thread.send(content=f"{ctx.author.mention}", embed=embed)
-        self.stalks.append(
-            {
+        self.stalks[userids['bmid']] = {
                 "thread": thread,
-                "bmid": userids['bmid']
+                "bmid": userids['bmid'],
+                "start": 0,
+                "stop": 0,
             }
-        )
+            
         
     @commands.command()
     async def endhunt(self, ctx, submittedinfo):
@@ -68,69 +74,100 @@ class Stalker(commands.Cog):
         if not userids['bmid']:
             await ctx.reply("Could not find this user.")
             return
+        if not userids['bmid'] in self.stalks:
+            await ctx.reply('I am not even hunting that person..')
+            return
         await ctx.send("The hunt has ended!")
-        for i in self.stalks:
-            if i['bmid'] == userids['bmid']:
-                await i['thread'].delete()
-                self.stalks.remove(i)
+        await self.stalks[userids['bmid']]['thread'].delete()
+        del self.stalks[userids['bmid']]
+                
         
-    @commands.command()
-    async def starthunt(self, ctx):
-        await self.stalker.start()
-        await ctx.send("The hunt has begun!")
-        
-    @commands.command()
-    async def stophunt(self, ctx):
-        self.stalker.stop()
-        await ctx.send("The hunt has ended!")
-       
     @tasks.loop(minutes=1)
     async def stalker(self):
         for i in self.stalks:
             await asyncio.sleep(1)
-            playersession = await self.GetPlayerSession(i['bmid'])
+            playersession = await self.GetPlayerSession(i)
             serverid = playersession['relationships']['server']['data']['id']
             server = await self.GetServerInfo(serverid)
-            embed = discord.Embed(title=f"Session - Server ID: {serverid}")
-            embed.add_field(
-                name="Server name",
-                value=f"```{server['name']}```",
-                inline=False
-            )
-            embed.add_field(
-                name="Server Discord",
-                value=f"```{server['discord']}```",
-                inline=False
-            )
-            embed.add_field(
-                name="Join time",
-                value=f"```{playersession['attributes']['start']}```",
-                inline=False
-            )
+            thread = self.stalks[i]['thread']
             if not playersession['attributes']['stop']:
                 playersession['attributes']['stop'] = 'Still on this server'
-            embed.add_field(
-                name="Leave time",
-                value=f"```{playersession['attributes']['stop']}```",
-                inline=False
-            )
-            embed.set_footer(text="Developed by Gnomeslayer#5551")
-            await i['thread'].send(embed=embed)
-    
+            if not playersession['attributes']['start'] == self.stalks[i]['start']:
+                embed = discord.Embed(title=f"Session - Server ID: {serverid}")
+                embed.add_field(
+                    name="Server name",
+                    value=f"```{server['name']}```",
+                    inline=False
+                )
+                embed.add_field(
+                    name="Server Discord",
+                    value=f"```{server['discord']}```",
+                    inline=False
+                )
+                embed.add_field(
+                    name="Join time",
+                    value=f"Player has joined a server```{playersession['attributes']['start']}```",
+                    inline=False
+                )
+                embed.add_field(
+                    name="Leave time",
+                    value=f"```{playersession['attributes']['stop']}```",
+                    inline=False
+                )
+                embed.set_footer(text="Developed by Gnomeslayer#5551")
+                try:
+                    await thread.send(embed=embed)
+                except:
+                    del self.stalks[self.stalks[i]]
+            if playersession['attributes']['start'] == self.stalks[i]['start'] and not playersession['attributes']['stop'] == self.stalks[i]['stop']:
+                embed = discord.Embed(title=f"Session - Server ID: {serverid}")
+                embed.add_field(
+                    name="Server name",
+                    value=f"```{server['name']}```",
+                    inline=False
+                )
+                embed.add_field(
+                    name="Server Discord",
+                    value=f"```{server['discord']}```",
+                    inline=False
+                )
+                embed.add_field(
+                    name="Join time",
+                    value=f"```{playersession['attributes']['start']}```",
+                    inline=False
+                )
+                embed.add_field(
+                    name="Leave time",
+                    value=f"Player has left the server.```{playersession['attributes']['stop']}```",
+                    inline=False
+                )
+                embed.set_footer(text="Developed by Gnomeslayer#5551")
+                try:
+                    await thread.send(embed=embed)
+                except:
+                    del self.stalks[self.stalks[i]]
+            self.stalks[i]['start'] = playersession['attributes']['start']
+            self.stalks[i]['stop'] = playersession['attributes']['stop']
+            
+    @stalker.before_loop
+    async def stalker_wait_for_ready(self):
+        await self.client.wait_until_ready()
+        
     async def GetPlayerSession(self, playerid):
         response = ""
+        serverid = 0
         url = f"https://api.battlemetrics.com/players/{playerid}/relationships/sessions"
         async with aiohttp.ClientSession(headers={"Authorization": f"Bearer {self.config['battlemetrics_token']}"}) as session:
             async with session.get(url=url) as r:
                 response = await r.json()
             serverid = response['data'][0]['relationships']['server']['data']['id']
-            await self.GetServerInfo(serverid)
-            return response['data'][0]
+        await self.GetServerInfo(serverid)
+        return response['data'][0]
     
     async def GetServerInfo(self, serverid):
         myservers = ''
         serverid = str(serverid)
-        with open("servers.json", "r") as f:
+        with open("./json/servers.json", "r") as f:
             myservers = json.load(f)
         if serverid in myservers:
             return myservers[serverid]
@@ -142,7 +179,7 @@ class Stalker(commands.Cog):
                 "discord": "None registered. You can register a discord by using the slash command /register",
                 'name': response['data']['attributes']['name']
             }
-            with open("servers.json", "w") as f:
+            with open("./json/servers.json", "w") as f:
                 f.write(json.dumps(myservers, indent=4))
             return myservers[serverid]
         
